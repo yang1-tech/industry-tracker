@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新兴支柱产业追踪</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- 首页 -->
+<div id="homePage">
+  <nav class="nav-bar">
+    <div class="nav-left">
+      <span class="nav-logo">📈</span>
+      <span class="nav-title">新兴支柱产业追踪</span>
+    </div>
+    <div class="nav-right">
+      <span id="navTime" class="nav-time"></span>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-bg">
+      <div class="hero-orb hero-orb-1"></div>
+      <div class="hero-orb hero-orb-2"></div>
+      <div class="hero-orb hero-orb-3"></div>
+    </div>
+    <div class="hero-badges">
+      <span class="hero-badge">⚡ 芯片</span>
+      <span class="hero-badge">🧬 医药</span>
+      <span class="hero-badge">🚀 航天</span>
+      <span class="hero-badge">☀️ 新能源</span>
+      <span class="hero-badge">🤖 机器人</span>
+      <span class="hero-badge">🛸 低空</span>
+      <span class="hero-badge">💎 材料</span>
+      <span class="hero-badge">🔮 量子</span>
+      <span class="hero-badge">📡 6G</span>
+    </div>
+    <h1 class="hero-title">新兴支柱产业</h1>
+    <p class="hero-sub">Emerging Pillar Industries · 实时追踪</p>
+    <div class="hero-line"></div>
+    <p class="hero-desc">聚焦九大战略性新兴产业，追踪龙头公司行情与产业动态</p>
+  </header>
+
+  <main class="container">
+    <div id="industryGrid" class="grid"></div>
+  </main>
+
+  <footer class="footer">
+    <p>数据来源：腾讯财经 · 新浪财经 · 仅供参考，不构成投资建议</p>
+    <p class="footer-sub">每60秒自动刷新行情 · 资讯每10分钟更新</p>
+  </footer>
+</div>
+
+<!-- 详情页 -->
+<div id="detailPage" style="display:none">
+  <nav class="nav-bar">
+    <div class="nav-left">
+      <button class="back-btn" onclick="showHome()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+        返回
+      </button>
+      <span id="detailIcon" class="detail-icon"></span>
+      <span id="detailTitle" class="detail-title"></span>
+    </div>
+    <div class="nav-right">
+      <span id="detailUpdateTime" class="nav-time"></span>
+    </div>
+  </nav>
+
+  <main class="container detail-container">
+    <!-- A股 -->
+    <section class="stock-section">
+      <div class="section-header">
+        <h2>A股代表 <span id="aStockCount" class="badge">0</span></h2>
+        <button class="icon-btn" id="stockRefreshBtn" onclick="refreshStocks()" title="刷新">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </button>
+      </div>
+      <div class="stock-cards" id="aStockCards"></div>
+    </section>
+
+    <!-- 港股 -->
+    <section class="stock-section" id="hkSection" style="display:none">
+      <div class="section-header">
+        <h2>港股代表 <span id="hkStockCount" class="badge">0</span></h2>
+      </div>
+      <div class="stock-cards" id="hkStockCards"></div>
+    </section>
+
+    <!-- 资讯 -->
+    <section class="news-section">
+      <div class="section-header">
+        <h2>产业资讯</h2>
+        <button class="icon-btn" id="newsRefreshBtn" onclick="refreshNews()" title="刷新">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </button>
+      </div>
+      <div id="newsList" class="news-list"></div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
