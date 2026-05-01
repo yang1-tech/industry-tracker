@@ -1,11 +1,15 @@
 """
-新兴支柱产业追踪系统 - 后端服务 (腾讯财经API版)
-每个产业展示3只代表性股票 + 实时行情
+新兴支柱产业追踪系统 - Render云部署版
+- 腾讯财经API获取行情
+- Google News RSS + 东方财富获取资讯
+- 端口使用PORT环境变量
 """
 import os
 import re
 import time
 import asyncio
+import urllib.request
+import json
 from datetime import datetime
 from typing import Dict, List, Optional
 from contextlib import asynccontextmanager
@@ -14,9 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-import urllib.request
-import subprocess
-import json
+
 
 # ============ 产业与代表性股票定义 ============
 INDUSTRIES = {
@@ -35,8 +37,8 @@ INDUSTRIES = {
         "hk_stocks": [
             {"code": "r_hk00981", "name": "中芯国际"},
         ],
-        "news_keywords": ["芯片", "半导体", "集成电路", "晶圆", "EDA", "光刻", "中芯", "华创", "封测", "存储", "GPU", "NVIDIA"],
-        "search_query": "半导体芯片集成电路新闻",
+        "news_keywords": ["芯片", "半导体", "集成电路", "晶圆", "EDA", "光刻", "NVIDIA", "GPU"],
+        "news_query": "半导体芯片集成电路",
     },
     "biomed": {
         "name": "生物医药",
@@ -53,8 +55,8 @@ INDUSTRIES = {
         "hk_stocks": [
             {"code": "r_hk02269", "name": "药明生物"},
         ],
-        "news_keywords": ["生物", "医药", "创新药", "临床", "CRO", "疫苗", "药明", "恒瑞", "迈瑞", "FDA", "GLP", "ADC", "基因"],
-        "search_query": "生物医药创新药新闻",
+        "news_keywords": ["生物", "医药", "创新药", "临床", "CRO", "疫苗", "FDA", "ADC"],
+        "news_query": "生物医药创新药",
     },
     "aerospace": {
         "name": "航空航天",
@@ -69,8 +71,8 @@ INDUSTRIES = {
             {"code": "sz002179", "name": "中航光电", "note": "军工连接器龙头"},
         ],
         "hk_stocks": [],
-        "news_keywords": ["航空", "航天", "大飞机", "C919", "卫星", "火箭", "商飞", "航发", "军工", "无人机", "SpaceX"],
-        "search_query": "航空航天C919卫星商业航天新闻",
+        "news_keywords": ["航空", "航天", "大飞机", "C919", "卫星", "火箭", "SpaceX"],
+        "news_query": "航空航天C919卫星商业航天",
     },
     "newenergy": {
         "name": "新能源",
@@ -87,8 +89,8 @@ INDUSTRIES = {
         "hk_stocks": [
             {"code": "r_hk01799", "name": "新特能源"},
         ],
-        "news_keywords": ["光伏", "风电", "储能", "锂电", "氢能", "新能源", "宁德", "隆基", "电池", "充电桩", "碳中和"],
-        "search_query": "新能源光伏风电核电储能新闻",
+        "news_keywords": ["光伏", "风电", "储能", "锂电", "氢能", "新能源", "碳中和"],
+        "news_query": "新能源光伏风电储能",
     },
     "robot": {
         "name": "具身智能机器人",
@@ -103,8 +105,8 @@ INDUSTRIES = {
             {"code": "sz300607", "name": "拓斯达", "note": "工业机器人"},
         ],
         "hk_stocks": [],
-        "news_keywords": ["机器人", "人形", "具身", "伺服", "减速器", "自动化", "工业母机", "智能制造", "Optimus"],
-        "search_query": "人形机器人具身智能新闻",
+        "news_keywords": ["机器人", "人形", "具身", "伺服", "减速器", "Optimus"],
+        "news_query": "人形机器人具身智能",
     },
     "lowaltitude": {
         "name": "低空经济",
@@ -119,8 +121,8 @@ INDUSTRIES = {
             {"code": "sh688070", "name": "纵横股份", "note": "工业无人机"},
         ],
         "hk_stocks": [],
-        "news_keywords": ["低空", "eVTOL", "飞行汽车", "通航", "小鹏", "亿航", "空域", "低空经济"],
-        "search_query": "低空经济eVTOL新闻",
+        "news_keywords": ["低空", "eVTOL", "飞行汽车", "通航", "亿航"],
+        "news_query": "低空经济eVTOL飞行汽车",
     },
     "newmaterial": {
         "name": "新材料",
@@ -135,8 +137,8 @@ INDUSTRIES = {
             {"code": "sz300777", "name": "中简科技", "note": "高性能碳纤维"},
         ],
         "hk_stocks": [],
-        "news_keywords": ["新材料", "碳纤维", "石墨烯", "复合材料", "镁合金", "钛合金", "稀土", "纳米", "芳纶"],
-        "search_query": "新材料碳纤维稀土新闻",
+        "news_keywords": ["新材料", "碳纤维", "石墨烯", "复合材料", "稀土"],
+        "news_query": "新材料碳纤维稀土",
     },
     "quantum": {
         "name": "量子科技",
@@ -151,8 +153,8 @@ INDUSTRIES = {
             {"code": "sz000555", "name": "神州信息", "note": "量子保密通信"},
         ],
         "hk_stocks": [],
-        "news_keywords": ["量子", "量子计算", "量子通信", "国盾", "量子加密", "量子芯片", "量子比特"],
-        "search_query": "量子科技量子计算新闻",
+        "news_keywords": ["量子", "量子计算", "量子通信", "量子比特"],
+        "news_query": "量子科技量子计算",
     },
     "6g": {
         "name": "6G通信",
@@ -169,8 +171,8 @@ INDUSTRIES = {
         "hk_stocks": [
             {"code": "r_hk00728", "name": "中国电信"},
         ],
-        "news_keywords": ["6G", "通信", "太赫兹", "通感", "卫星互联网", "中兴", "烽火", "光通信", "5G-A", "物联网"],
-        "search_query": "6G通信太赫兹卫星互联网新闻",
+        "news_keywords": ["6G", "通信", "太赫兹", "卫星互联网", "5G-A"],
+        "news_query": "6G通信太赫兹卫星互联网",
     },
 }
 
@@ -199,52 +201,40 @@ cache = DataCache()
 
 # ============ 腾讯财经API数据获取 ============
 def _fetch_qq_quotes(codes: List[str]) -> Dict[str, Dict]:
-    """批量获取腾讯财经实时行情"""
     if not codes:
         return {}
-
     cache_key = f"qq_{'_'.join(sorted(codes))}"
     cached = cache.get(cache_key, max_age=120)
     if cached is not None:
         return cached
-
     codes_str = ",".join(codes)
     url = f"https://qt.gtimg.cn/q={codes_str}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-
     try:
         resp = urllib.request.urlopen(req, timeout=10)
         raw = resp.read().decode("gbk", errors="ignore")
     except Exception as e:
         print(f"[ERROR] 腾讯API请求失败: {e}")
         return {}
-
     result = {}
     for line in raw.strip().split(";"):
         line = line.strip()
         if not line or "=" not in line:
             continue
-
         var_part, value_part = line.split("=", 1)
         value_part = value_part.strip('"').strip("'")
         if not value_part:
             continue
-
         parts = value_part.split("~")
-
-        # 解析字段
         def safe_float(idx):
             try:
                 v = parts[idx] if idx < len(parts) else ""
                 return float(v) if v and v not in ("-", "") else None
             except (ValueError, IndexError):
                 return None
-
         def safe_str(idx):
             return parts[idx] if idx < len(parts) else ""
-
-        code_raw = safe_str(2)  # 纯数字代码
-        # 构建完整代码（加市场前缀）
+        code_raw = safe_str(2)
         var_name = var_part.strip()
         if var_name.startswith("v_sh"):
             full_code = f"sh{code_raw}"
@@ -254,218 +244,164 @@ def _fetch_qq_quotes(codes: List[str]) -> Dict[str, Dict]:
             full_code = f"r_hk{code_raw}"
         else:
             full_code = code_raw
-
         price = safe_float(3)
-        pre_close = safe_float(4)
         change_pct = safe_float(32)
-        change_amt = safe_float(31)
         pe_dynamic = safe_float(39)
         pe_ttm = safe_float(52)
         pb = safe_float(46)
         ps = safe_float(56)
-        market_cap_yi = safe_float(44)  # 亿元
-        turnover_rate = safe_float(38)
-
+        market_cap_yi = safe_float(44)
         result[full_code] = {
-            "code": code_raw,
-            "full_code": full_code,
-            "name": safe_str(1),
-            "price": price,
-            "pre_close": pre_close,
-            "change_pct": change_pct,
-            "change_amt": change_amt,
+            "code": code_raw, "full_code": full_code, "name": safe_str(1),
+            "price": price, "change_pct": change_pct,
             "pe": pe_ttm if pe_ttm else pe_dynamic,
-            "pb": pb,
-            "ps": ps,
-            "market_cap": market_cap_yi,
+            "pb": pb, "ps": ps, "market_cap": market_cap_yi,
             "market_cap_str": f"{market_cap_yi:.0f}亿" if market_cap_yi else "--",
-            "turnover_rate": turnover_rate,
         }
-
     cache.set(cache_key, result)
     return result
 
 
 def _fetch_qq_hk_quotes(hk_codes: List[str]) -> Dict[str, Dict]:
-    """获取港股行情（腾讯财经）"""
     if not hk_codes:
         return {}
-
     cache_key = f"qq_hk_{'_'.join(sorted(hk_codes))}"
     cached = cache.get(cache_key, max_age=120)
     if cached is not None:
         return cached
-
     codes_str = ",".join(hk_codes)
     url = f"https://qt.gtimg.cn/q={codes_str}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-
     try:
         resp = urllib.request.urlopen(req, timeout=10)
         raw = resp.read().decode("gbk", errors="ignore")
     except Exception as e:
         print(f"[ERROR] 港股API请求失败: {e}")
         return {}
-
     result = {}
     for line in raw.strip().split(";"):
         line = line.strip()
         if not line or "=" not in line:
             continue
-
         var_part, value_part = line.split("=", 1)
         value_part = value_part.strip('"').strip("'")
         if not value_part:
             continue
-
         parts = value_part.split("~")
-
         def safe_float(idx):
             try:
                 v = parts[idx] if idx < len(parts) else ""
                 return float(v) if v and v not in ("-", "") else None
             except (ValueError, IndexError):
                 return None
-
         def safe_str(idx):
             return parts[idx] if idx < len(parts) else ""
-
-        var_name = var_part.strip()
         code_raw = safe_str(2)
         full_code = f"r_hk{code_raw}"
-
         price = safe_float(3)
-        pre_close = safe_float(4)
         change_pct = safe_float(32)
-        change_amt = safe_float(31)
-        pe_val = safe_float(62) or safe_float(39)  # [62]=PE_TTM, [39]=PE(dynamic)
-        ps_val = safe_float(58)  # [58]=PS
-        market_cap_yi = safe_float(44)  # 亿港元
-
+        pe_val = safe_float(62) or safe_float(39)
+        ps_val = safe_float(58)
+        market_cap_yi = safe_float(44)
         result[full_code] = {
-            "code": code_raw,
-            "full_code": full_code,
-            "name": safe_str(1),
-            "price": price,
-            "pre_close": pre_close,
-            "change_pct": change_pct,
-            "change_amt": change_amt,
-            "pe": pe_val,
-            "pb": None,
-            "ps": ps_val,
-            "market_cap": market_cap_yi,
+            "code": code_raw, "full_code": full_code, "name": safe_str(1),
+            "price": price, "change_pct": change_pct,
+            "pe": pe_val, "pb": None, "ps": ps_val, "market_cap": market_cap_yi,
             "market_cap_str": f"{market_cap_yi:.0f}亿HKD" if market_cap_yi else "--",
-            "turnover_rate": safe_float(38),
         }
-
     cache.set(cache_key, result)
     return result
 
 
-# ============ 资讯获取 ============
-import re as _re
-
-# ProSearch脚本路径
-_NODE_BIN = r"C:\Program Files\QClaw\resources\node\node.exe"
-_PROSEARCH_SCRIPT = os.path.join(
-    os.environ.get('ProgramFiles', r'C:\Program Files'),
-    'QClaw', 'resources', 'openclaw', 'config', 'skills',
-    'online-search', 'scripts', 'prosearch.cjs'
-)
-
-# 创建中文关键词传递的Node wrapper（解决Windows GBK编码问题）
-import tempfile as _tempfile
-_WRAPPER_JS = """const { execFileSync } = require('child_process');
-const keyword = process.env.PROSEARCH_KEYWORD;
-const freshness = process.env.PROSEARCH_FRESHNESS || '7d';
-const industry = process.env.PROSEARCH_INDUSTRY || 'news';
-const scriptPath = process.argv[2];
-const args = [scriptPath, '--keyword=' + keyword, '--freshness=' + freshness, '--industry=' + industry];
-try { const result = execFileSync(process.execPath, args, { encoding: 'utf-8', timeout: 15000 }); process.stdout.write(result); } catch(e) { process.stdout.write(JSON.stringify({success:false, message: e.message})); }
-"""
-_WRAPPER_PATH = os.path.join(_tempfile.gettempdir(), "_prosearch_wrapper.cjs")
-with open(_WRAPPER_PATH, 'w', encoding='utf-8') as _f:
-    _f.write(_WRAPPER_JS)
-
-def _fetch_news_prosearch(query: str) -> List[Dict]:
-    """通过ProSearch获取产业专属新闻（用环境变量传递中文关键词避免GBK编码问题）"""
+# ============ 资讯获取（云部署版 - 纯HTTP） ============
+def _fetch_news_rss2json(query: str) -> List[Dict]:
+    """通过rss2json获取Google News资讯"""
     try:
-        env = os.environ.copy()
-        env["PROSEARCH_KEYWORD"] = query
-        env["PROSEARCH_FRESHNESS"] = "7d"
-        env["PROSEARCH_INDUSTRY"] = "news"
+        rss_url = f"https://news.google.com/rss/search?q={urllib.request.quote(query)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+        api_url = f"https://api.rss2json.com/v1/api.json?rss_url={urllib.request.quote(rss_url)}"
+        req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read().decode("utf-8"))
+        if data.get("status") == "ok" and data.get("items"):
+            news_list = []
+            for item in data["items"][:5]:
+                title = item.get("title", "").strip()
+                if not title or len(title) < 8:
+                    continue
+                source = item.get("author") or item.get("source", "")
+                if isinstance(source, dict):
+                    source = source.get("title", "")
+                pub_date = item.get("pubDate", "")
+                try:
+                    dt = datetime.fromisoformat(pub_date.replace("Z", "+00:00"))
+                    time_str = dt.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    time_str = pub_date[:16] if pub_date else ""
+                desc = re.sub(r'<[^>]+>', '', item.get("description", ""))[:120]
+                news_list.append({
+                    "title": title[:80], "content": desc,
+                    "source": str(source) or "Google News",
+                    "time": time_str, "url": item.get("link", ""),
+                })
+            return news_list
+    except Exception as e:
+        print(f"[WARN] rss2json failed for {query}: {e}")
+    return []
 
-        result = subprocess.run(
-            [_NODE_BIN, _WRAPPER_PATH, _PROSEARCH_SCRIPT],
-            capture_output=True, timeout=20,
-            env=env
-        )
-        stdout = result.stdout.decode('utf-8', errors='replace')
 
-        if not stdout.strip():
-            print(f"[WARN] ProSearch empty stdout for: {query}")
-            return []
-
-        try:
-            data = json.loads(stdout)
-        except json.JSONDecodeError as e:
-            print(f"[WARN] ProSearch JSON parse error for {query}: {e}")
-            return []
-
-        if not data.get("success", False):
-            print(f"[WARN] ProSearch failed for {query}: {data.get('message','')[:100]}")
-            return []
-
-        docs = data.get("data", {}).get("docs", [])
+def _fetch_news_eastmoney(keywords: List[str]) -> List[Dict]:
+    """备用：东方财富新闻搜索"""
+    try:
+        keyword = keywords[0] if keywords else ""
+        param = json.dumps({
+            "uid": "", "keyword": keyword,
+            "type": ["cmsArticleWebOld"],
+            "client": "web", "clientType": "web", "clientVersion": "curr",
+            "param": {"cmsArticleWebOld": {
+                "searchScope": "default", "sort": "default",
+                "pageIndex": 1, "pageSize": 5, "preTag": "", "postTag": ""
+            }}
+        }, ensure_ascii=False)
+        url = f"https://search-api-web.eastmoney.com/search/jsonp?cb=jQuery&param={urllib.request.quote(param)}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://so.eastmoney.com/"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        raw = resp.read().decode("utf-8", errors="ignore")
+        json_str = re.sub(r'^jQuery\(', '', raw).rstrip(')')
+        data = json.loads(json_str)
+        items = data.get("result", {}).get("cmsArticleWebOld", {}).get("list", [])
         news_list = []
-        for doc in docs:
-            title = doc.get("title", "").strip()
-            passage = doc.get("passage", "").strip()
-            url = doc.get("url", "")
-            date = doc.get("date", "")
-            site = doc.get("site", "")
-            # 过滤掉股票行情页和无关内容
-            if not title or '行情走势' in title or '行情_' in title:
-                continue
-            if len(title) < 8:
+        for item in items[:5]:
+            title = re.sub(r'<[^>]+>', '', item.get("title", "")).strip()
+            if not title:
                 continue
             news_list.append({
                 "title": title[:80],
-                "content": passage[:120],
-                "source": site or "腾讯元宝搜索",
-                "time": date[:16] if date else "",
-                "url": url,
+                "content": re.sub(r'<[^>]+>', '', item.get("content", ""))[:120],
+                "source": item.get("source", "") or "东方财富",
+                "time": item.get("date", "")[:16],
+                "url": item.get("url", ""),
             })
-        return news_list[:5]
-    except subprocess.TimeoutExpired:
-        print(f"[WARN] ProSearch timeout for: {query}")
-        return []
+        return news_list
     except Exception as e:
-        print(f"[WARN] ProSearch error for {query}: {e}")
-        return []
+        print(f"[WARN] 东方财富新闻 failed: {e}")
+    return []
 
 
 def _fetch_news_sina(keywords: List[str]) -> List[Dict]:
     """备用：新浪7x24关键词匹配"""
-    import re as _re2
     def strip_html(text):
-        return _re2.sub(r'<[^>]+>', '', text).strip()
-
+        return re.sub(r'<[^>]+>', '', text).strip()
     all_items = []
     for page in range(1, 3):
         try:
             url = f"https://zhibo.sina.com.cn/api/zhibo/feed?page={page}&page_size=50&zhibo_id=152&tag_id=0&type=0"
-            req = urllib.request.Request(url, headers={
-                "User-Agent": "Mozilla/5.0",
-                "Referer": "https://finance.sina.com.cn/"
-            })
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn/"})
             resp = urllib.request.urlopen(req, timeout=10)
             data = json.loads(resp.read().decode("utf-8"))
             items = data.get("result", {}).get("data", {}).get("feed", {}).get("list", [])
             all_items.extend(items)
         except Exception:
             pass
-
     news_list = []
     for item in all_items:
         rich = item.get("rich_text", "")
@@ -473,8 +409,7 @@ def _fetch_news_sina(keywords: List[str]) -> List[Dict]:
         content = strip_html(rich)
         if any(kw in title or kw in content for kw in keywords):
             news_list.append({
-                "title": title,
-                "content": content[:100],
+                "title": title, "content": content[:100],
                 "source": "新浪财经7x24",
                 "time": item.get("created_at", ""),
                 "url": "https://finance.sina.com.cn/7x24/",
@@ -483,25 +418,26 @@ def _fetch_news_sina(keywords: List[str]) -> List[Dict]:
 
 
 def _fetch_news_sync(industry_name: str, keywords: List[str], search_query: str) -> List[Dict]:
-    """获取产业资讯 - 优先ProSearch，备用新浪7x24"""
+    """获取产业资讯 - 多源级联"""
     cache_key = f"news_{industry_name}"
     cached = cache.get(cache_key, max_age=600)
     if cached is not None:
         return cached
-
-    # 优先使用ProSearch
-    news_list = _fetch_news_prosearch(search_query)
-
-    # 如果ProSearch结果不足，用新浪7x24补充
+    news_list = _fetch_news_rss2json(search_query)
+    if len(news_list) < 3:
+        em_news = _fetch_news_eastmoney(keywords)
+        existing = {n["title"] for n in news_list}
+        for n in em_news:
+            if n["title"] not in existing:
+                news_list.append(n)
+                existing.add(n["title"])
     if len(news_list) < 3:
         sina_news = _fetch_news_sina(keywords)
-        # 去重
-        existing_titles = {n["title"] for n in news_list}
+        existing = {n["title"] for n in news_list}
         for n in sina_news:
-            if n["title"] not in existing_titles:
+            if n["title"] not in existing:
                 news_list.append(n)
-                existing_titles.add(n["title"])
-
+                existing.add(n["title"])
     cache.set(cache_key, news_list[:5])
     return news_list[:5]
 
@@ -509,9 +445,10 @@ def _fetch_news_sync(industry_name: str, keywords: List[str], search_query: str)
 # ============ FastAPI ============
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    port = os.environ.get("PORT", "8765")
     print("=" * 50)
     print("  新兴支柱产业追踪系统")
-    print("  http://localhost:8765")
+    print(f"  http://0.0.0.0:{port}")
     print("=" * 50)
     yield
 
@@ -524,12 +461,8 @@ async def get_industries():
     result = []
     for key, ind in INDUSTRIES.items():
         result.append({
-            "id": key,
-            "name": ind["name"],
-            "subtitle": ind["subtitle"],
-            "icon": ind["icon"],
-            "color": ind["color"],
-            "gradient": ind["gradient"],
+            "id": key, "name": ind["name"], "subtitle": ind["subtitle"],
+            "icon": ind["icon"], "color": ind["color"], "gradient": ind["gradient"],
             "description": ind["description"],
         })
     return {"industries": result}
@@ -539,55 +472,36 @@ async def get_industries():
 async def get_industry_stocks(industry_id: str):
     if industry_id not in INDUSTRIES:
         raise HTTPException(status_code=404, detail="产业不存在")
-
     ind = INDUSTRIES[industry_id]
-
-    # 获取A股行情
     a_codes = [s["code"] for s in ind["stocks"]]
     a_quotes = await asyncio.to_thread(_fetch_qq_quotes, a_codes)
-
     a_stocks = []
     for s in ind["stocks"]:
         q = a_quotes.get(s["code"], {})
         a_stocks.append({
-            "code": q.get("code", s["code"][2:]),
-            "name": q.get("name", s["name"]),
-            "note": s.get("note", ""),
-            "price": q.get("price"),
-            "change_pct": q.get("change_pct"),
-            "pe": q.get("pe"),
-            "ps": q.get("ps"),
-            "pb": q.get("pb"),
+            "code": q.get("code", s["code"][2:]), "name": q.get("name", s["name"]),
+            "note": s.get("note", ""), "price": q.get("price"),
+            "change_pct": q.get("change_pct"), "pe": q.get("pe"),
+            "ps": q.get("ps"), "pb": q.get("pb"),
             "market_cap": q.get("market_cap_str", "--"),
             "market_cap_raw": q.get("market_cap", 0) or 0,
         })
-
-    # 获取港股行情
     hk_codes = [s["code"] for s in ind["hk_stocks"]]
     hk_quotes = await asyncio.to_thread(_fetch_qq_hk_quotes, hk_codes) if hk_codes else {}
-
     hk_stocks = []
     for s in ind["hk_stocks"]:
         q = hk_quotes.get(s["code"], {})
         hk_stocks.append({
-            "code": q.get("code", s["code"][2:]),
-            "name": q.get("name", s["name"]),
-            "price": q.get("price"),
-            "change_pct": q.get("change_pct"),
-            "pe": q.get("pe"),
-            "ps": q.get("ps"),
-            "pb": q.get("pb"),
+            "code": q.get("code", s["code"][2:]), "name": q.get("name", s["name"]),
+            "price": q.get("price"), "change_pct": q.get("change_pct"),
+            "pe": q.get("pe"), "ps": q.get("ps"), "pb": q.get("pb"),
             "market_cap": q.get("market_cap_str", "--"),
             "market_cap_raw": q.get("market_cap", 0) or 0,
         })
-
     return {
-        "id": industry_id,
-        "name": ind["name"],
-        "a_stocks": a_stocks,
-        "hk_stocks": hk_stocks,
-        "a_count": len(a_stocks),
-        "hk_count": len(hk_stocks),
+        "id": industry_id, "name": ind["name"],
+        "a_stocks": a_stocks, "hk_stocks": hk_stocks,
+        "a_count": len(a_stocks), "hk_count": len(hk_stocks),
         "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
@@ -596,15 +510,9 @@ async def get_industry_stocks(industry_id: str):
 async def get_industry_news(industry_id: str):
     if industry_id not in INDUSTRIES:
         raise HTTPException(status_code=404, detail="产业不存在")
-
     ind = INDUSTRIES[industry_id]
     news = await asyncio.to_thread(_fetch_news_sync, ind["name"], ind["news_keywords"], ind["search_query"])
-    return {
-        "id": industry_id,
-        "name": ind["name"],
-        "news": news,
-        "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    }
+    return {"id": industry_id, "name": ind["name"], "news": news, "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 
 @app.post("/api/cache/clear")
@@ -618,7 +526,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-
 @app.get("/")
 async def root():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -626,4 +533,5 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8765)
+    port = int(os.environ.get("PORT", 8765))
+    uvicorn.run(app, host="0.0.0.0", port=port)
